@@ -1,0 +1,313 @@
+﻿CricketHub API running on http://localhost:3001
+node : TypeError: 
+Cannot read 
+properties of 
+undefined (reading 
+'find')
+At line:1 char:47
++ ...  -Name node | 
+Stop-Process -Force; 
+node server/server.js 
+2>&1 | Out-F ...
++                     
+                   ~~~
+~~~~~~~~~~~~~~~~~~~~~~
+~
+    + CategoryInfo    
+          : NotSpeci  
+  fied: (TypeError:   
+  Cann...reading '    
+find'):String) []    
+, RemoteException
+    + FullyQualifiedE 
+   rrorId : NativeCo  
+  mmandError
+ 
+    at 
+Object.createUser (C:\
+Users\iftik\OneDrive\D
+esktop\Mateen\Web 
+Development Projects\L
+eague\server\database.
+js:40:20)
+    at C:\Users\iftik\
+OneDrive\Desktop\Matee
+n\Web Development Proj
+ects\League\server\ser
+ver.js:31:21
+    at Layer.handle 
+[as handle_request] (C
+:\Users\iftik\OneDrive
+\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\layer.
+js:95:5)
+    at next (C:\Users\
+iftik\OneDrive\Desktop
+\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\route.
+js:149:13)
+    at Route.dispatch 
+(C:\Users\iftik\OneDri
+ve\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\route.
+js:119:3)
+    at Layer.handle 
+[as handle_request] (C
+:\Users\iftik\OneDrive
+\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\layer.
+js:95:5)
+    at C:\Users\iftik\
+OneDrive\Desktop\Matee
+n\Web Development Proj
+ects\League\node_modul
+es\express\lib\router\
+index.js:284:15
+    at 
+router.process_params 
+(C:\Users\iftik\OneDri
+ve\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\index.
+js:346:12)
+    at next (C:\Users\
+iftik\OneDrive\Desktop
+\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\index.
+js:280:10)
+    at C:\Users\iftik\
+OneDrive\Desktop\Matee
+n\Web Development Proj
+ects\League\node_modul
+es\body-parser\lib\rea
+d.js:137:5
+TypeError: Cannot 
+read properties of 
+undefined (reading 
+'find')
+    at 
+Object.createUser (C:\
+Users\iftik\OneDrive\D
+esktop\Mateen\Web 
+Development Projects\L
+eague\server\database.
+js:40:20)
+    at C:\Users\iftik\
+OneDrive\Desktop\Matee
+n\Web Development Proj
+ects\League\server\ser
+ver.js:31:21
+    at Layer.handle 
+[as handle_request] (C
+:\Users\iftik\OneDrive
+\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\layer.
+js:95:5)
+    at next (C:\Users\
+iftik\OneDrive\Desktop
+\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\route.
+js:149:13)
+    at Route.dispatch 
+(C:\Users\iftik\OneDri
+ve\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\route.
+js:119:3)
+    at Layer.handle 
+[as handle_request] (C
+:\Users\iftik\OneDrive
+\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\layer.
+js:95:5)
+    at C:\Users\iftik\
+OneDrive\Desktop\Matee
+n\Web Development Proj
+ects\League\node_modul
+es\express\lib\router\
+index.js:284:15
+    at 
+router.process_params 
+(C:\Users\iftik\OneDri
+ve\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\index.
+js:346:12)
+    at next (C:\Users\
+iftik\OneDrive\Desktop
+\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\index.
+js:280:10)
+    at C:\Users\iftik\
+OneDrive\Desktop\Matee
+n\Web Development Proj
+ects\League\node_modul
+es\body-parser\lib\rea
+d.js:137:5
+TypeError: Cannot 
+read properties of 
+undefined (reading 
+'find')
+    at 
+Object.createUser (C:\
+Users\iftik\OneDrive\D
+esktop\Mateen\Web 
+Development Projects\L
+eague\server\database.
+js:40:20)
+    at C:\Users\iftik\
+OneDrive\Desktop\Matee
+n\Web Development Proj
+ects\League\server\ser
+ver.js:31:21
+    at Layer.handle 
+[as handle_request] (C
+:\Users\iftik\OneDrive
+\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\layer.
+js:95:5)
+    at next (C:\Users\
+iftik\OneDrive\Desktop
+\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\route.
+js:149:13)
+    at Route.dispatch 
+(C:\Users\iftik\OneDri
+ve\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\route.
+js:119:3)
+    at Layer.handle 
+[as handle_request] (C
+:\Users\iftik\OneDrive
+\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\layer.
+js:95:5)
+    at C:\Users\iftik\
+OneDrive\Desktop\Matee
+n\Web Development Proj
+ects\League\node_modul
+es\express\lib\router\
+index.js:284:15
+    at 
+router.process_params 
+(C:\Users\iftik\OneDri
+ve\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\index.
+js:346:12)
+    at next (C:\Users\
+iftik\OneDrive\Desktop
+\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\index.
+js:280:10)
+    at C:\Users\iftik\
+OneDrive\Desktop\Matee
+n\Web Development Proj
+ects\League\node_modul
+es\body-parser\lib\rea
+d.js:137:5
+TypeError: Cannot 
+read properties of 
+undefined (reading 
+'find')
+    at 
+Object.createUser (C:\
+Users\iftik\OneDrive\D
+esktop\Mateen\Web 
+Development Projects\L
+eague\server\database.
+js:40:20)
+    at C:\Users\iftik\
+OneDrive\Desktop\Matee
+n\Web Development Proj
+ects\League\server\ser
+ver.js:31:21
+    at Layer.handle 
+[as handle_request] (C
+:\Users\iftik\OneDrive
+\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\layer.
+js:95:5)
+    at next (C:\Users\
+iftik\OneDrive\Desktop
+\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\route.
+js:149:13)
+    at Route.dispatch 
+(C:\Users\iftik\OneDri
+ve\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\route.
+js:119:3)
+    at Layer.handle 
+[as handle_request] (C
+:\Users\iftik\OneDrive
+\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\layer.
+js:95:5)
+    at C:\Users\iftik\
+OneDrive\Desktop\Matee
+n\Web Development Proj
+ects\League\node_modul
+es\express\lib\router\
+index.js:284:15
+    at 
+router.process_params 
+(C:\Users\iftik\OneDri
+ve\Desktop\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\index.
+js:346:12)
+    at next (C:\Users\
+iftik\OneDrive\Desktop
+\Mateen\Web 
+Development Projects\L
+eague\node_modules\exp
+ress\lib\router\index.
+js:280:10)
+    at C:\Users\iftik\
+OneDrive\Desktop\Matee
+n\Web Development Proj
+ects\League\node_modul
+es\body-parser\lib\rea
+d.js:137:5
