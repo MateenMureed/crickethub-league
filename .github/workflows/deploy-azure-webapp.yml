@@ -34,6 +34,9 @@ jobs:
           cp -R dist deploy/dist
           cp package.json deploy/package.json
           cp package-lock.json deploy/package-lock.json
+          cd deploy
+          npm ci --omit=dev
+          cd ..
           mkdir -p deploy/media
 
       - name: Deploy to Azure Web App
