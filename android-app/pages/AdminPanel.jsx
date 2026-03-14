@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useContext } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Capacitor } from '@capacitor/core'
 import { AuthContext } from '../context/AuthContext'
 import GraphicsGeneratorPanel, {
   generateSquadBannerForTeam,
@@ -11,14 +12,18 @@ import GraphicsGeneratorPanel, {
   generateSummaryBannerForMatch,
 } from '../components/GraphicsGeneratorPanel'
 
-const API = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
-const API_FALLBACK = `http://${window.location.hostname}:3001/api`
+const API = (() => {
+  const raw = (import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_BASE_URL || 'https://crickethub.azurewebsites.net/api').replace(/\/$/, '')
+  if (!raw.startsWith('http')) return raw
+  return raw.endsWith('/api') ? raw : `${raw}/api`
+})()
+const API_FALLBACK = 'https://crickethub.azurewebsites.net/api'
 
 function buildApiUrls(path) {
   const cleanPath = String(path || '').startsWith('/') ? path : `/${path}`
   const primary = `${API}${cleanPath}`
   const urls = [primary]
-  if (API.startsWith('/')) {
+  if (API.startsWith('/') || !API.includes('crickethub.azurewebsites.net')) {
     urls.push(`${API_FALLBACK}${cleanPath}`)
   }
   return [...new Set(urls)]
@@ -47,13 +52,62 @@ async function apiCall(path, options) {
 
   for (let i = 0; i < urls.length; i++) {
     try {
-      return await fetch(urls[i], options)
+      const res = await fetch(urls[i], options)
+      if (res.ok) return res
+
+      // Retry alternate endpoint on transient/server errors.
+      if (res.status >= 500 && i < urls.length - 1) {
+        continue
+      }
+
+      return res
     } catch (err) {
       lastErr = err
     }
   }
 
   throw lastErr || new Error('Request failed')
+}
+
+async function fileToDataUrl(file) {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(new Error('Failed to read image file'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function isFileLike(value) {
+  if (!value || typeof value !== 'object') return false
+  if (typeof File !== 'undefined' && value instanceof File) return true
+  if (typeof Blob !== 'undefined' && value instanceof Blob) return true
+  return typeof value.arrayBuffer === 'function' && typeof value.size === 'number'
+}
+
+async function formDataToJsonPayload(formData) {
+  const payload = {}
+  let hadFiles = false
+
+  for (const [key, value] of formData.entries()) {
+    if (isFileLike(value)) {
+      if (value.size > 0) {
+        hadFiles = true
+        payload[`${key}_data`] = await fileToDataUrl(value)
+        payload[`${key}_name`] = value.name || `${key}.png`
+      }
+      continue
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, key)) {
+      if (Array.isArray(payload[key])) payload[key].push(value)
+      else payload[key] = [payload[key], value]
+    } else {
+      payload[key] = value
+    }
+  }
+
+  return { payload, hadFiles }
 }
 
 function buildFixtureDraftRows(teams, form) {
@@ -115,6 +169,14 @@ function createEmptyLeagueForm() {
     overs_per_innings: 20,
     status: 'upcoming',
   }
+}
+
+function createEmptyBulkPlayers() {
+  return Array.from({ length: 11 }, () => ({ name: '', role: 'batsman', jersey_number: '' }))
+}
+
+function createEmptyBulkPhotos() {
+  return Array.from({ length: 11 }, () => null)
 }
 
 /* ── Reusable inline banner button ── */
@@ -187,6 +249,13 @@ export default function AdminPanel() {
   const [showInlineLeagueForm, setShowInlineLeagueForm] = useState(false)
   const [showInlineTeamForm, setShowInlineTeamForm] = useState(false)
   const [editMatch, setEditMatch] = useState(null)
+  const [editMatchDraft, setEditMatchDraft] = useState({
+    date: '',
+    time: '',
+    venue: '',
+    overs_per_innings: 20,
+    status: 'upcoming',
+  })
   const leagueBannerRef = useRef(null)
 
   // Forms
@@ -204,6 +273,7 @@ export default function AdminPanel() {
   const [editPlayerPhoto, setEditPlayerPhoto] = useState(null)
   const [inlineEditPlayerId, setInlineEditPlayerId] = useState(null)
   const [inlinePlayerDraft, setInlinePlayerDraft] = useState({ name: '', role: 'batsman', jersey_number: '' })
+  const [inlinePlayerPhoto, setInlinePlayerPhoto] = useState(null)
   const [inlineEditTeamId, setInlineEditTeamId] = useState(null)
   const [inlineTeamDraft, setInlineTeamDraft] = useState({ name: '', captain_name: '' })
   const [inlineTeamLogo, setInlineTeamLogo] = useState(null)
@@ -213,8 +283,8 @@ export default function AdminPanel() {
   const [bulkTeamName, setBulkTeamName] = useState('')
   const [bulkTeamLogo, setBulkTeamLogo] = useState(null)
   const [bulkCaptainIndex, setBulkCaptainIndex] = useState(0)
-  const [bulkPlayers, setBulkPlayers] = useState(Array(11).fill({ name: '', role: 'batsman', jersey_number: '' }))
-  const [bulkPhotos, setBulkPhotos] = useState(Array(11).fill(null))
+  const [bulkPlayers, setBulkPlayers] = useState(createEmptyBulkPlayers)
+  const [bulkPhotos, setBulkPhotos] = useState(createEmptyBulkPhotos)
 
   // ── Banner generating states (keyed by id) ──
   const [busyBanners, setBusyBanners] = useState({})  // { `${type}_${id}`: true }
@@ -249,6 +319,48 @@ export default function AdminPanel() {
   }
 
   const showToast = (msg) => setToast(msg)
+
+  const postFormSafe = async (path, formData, method = 'POST') => {
+    if (!Capacitor.isNativePlatform()) {
+      return apiCall(path, { method, body: formData })
+    }
+
+    // Prefer native multipart first so large image uploads work like web.
+    try {
+      const multipartRes = await apiCall(path, { method, body: formData })
+      if (multipartRes.ok) return multipartRes
+
+      // For validation/client errors, return immediately instead of altering payload.
+      if (multipartRes.status >= 400 && multipartRes.status < 500) {
+        return multipartRes
+      }
+    } catch {
+      // Fallback to JSON payload below when multipart transport fails.
+    }
+
+    const { payload, hadFiles } = await formDataToJsonPayload(formData)
+
+    if (!hadFiles) {
+      return apiCall(path, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+    }
+
+    return apiCall(path, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+  }
+
+  const ensureOk = async (res, fallbackMessage) => {
+    if (res.ok) return true
+    const payload = await res.json().catch(() => ({}))
+    alert(payload.error || fallbackMessage || 'Request failed')
+    return false
+  }
 
   const withBanner = async (key, fn) => {
     setBusy(key, true)
@@ -392,27 +504,33 @@ export default function AdminPanel() {
 
   const createLeague = async (e) => {
     e.preventDefault()
-    const fd = new FormData()
-    Object.entries(leagueForm).forEach(([k, v]) => fd.append(k, v))
-    if (leagueLogo) fd.append('logo', leagueLogo)
-    const res = await apiCall('/leagues', { method: 'POST', body: fd })
-    const leagueData = await res.json()
-    if (leagueData?.id) {
-      const validSponsors = sponsorInputs.filter(s => s.name.trim())
-      for (const sponsor of validSponsors) {
-        const sfd = new FormData()
-        sfd.append('name', sponsor.name.trim())
-        if (sponsor.logo) sfd.append('logo', sponsor.logo)
-        await apiCall(`/leagues/${leagueData.id}/sponsors`, { method: 'POST', body: sfd })
+    try {
+      const fd = new FormData()
+      Object.entries(leagueForm).forEach(([k, v]) => fd.append(k, v))
+      if (leagueLogo) fd.append('logo', leagueLogo)
+      const res = await postFormSafe('/leagues', fd, 'POST')
+      if (!(await ensureOk(res, 'Failed to create league'))) return
+      const leagueData = await res.json()
+      if (leagueData?.id) {
+        const validSponsors = sponsorInputs.filter(s => s.name.trim())
+        for (const sponsor of validSponsors) {
+          const sfd = new FormData()
+          sfd.append('name', sponsor.name.trim())
+          if (sponsor.logo) sfd.append('logo', sponsor.logo)
+          const sponsorRes = await postFormSafe(`/leagues/${leagueData.id}/sponsors`, sfd, 'POST')
+          if (!sponsorRes.ok) break
+        }
+        setGeneratedLeagueBanner({ id: leagueData.id, ...leagueForm, logo: leagueLogo ? URL.createObjectURL(leagueLogo) : null, sponsors: validSponsors })
+        setShowModal('leagueBanner')
       }
-      setGeneratedLeagueBanner({ id: leagueData.id, ...leagueForm, logo: leagueLogo ? URL.createObjectURL(leagueLogo) : null, sponsors: validSponsors })
-      setShowModal('leagueBanner')
+      setLeagueForm(createEmptyLeagueForm())
+      setSponsorInputs([{ name: '', logo: null }, { name: '', logo: null }])
+      setLeagueLogo(null)
+      setShowInlineLeagueForm(false)
+      loadLeagues()
+    } catch (err) {
+      alert(err?.message || 'Failed to create league. Please check network and try again.')
     }
-    setLeagueForm(createEmptyLeagueForm())
-    setSponsorInputs([{ name: '', logo: null }, { name: '', logo: null }])
-    setLeagueLogo(null)
-    setShowInlineLeagueForm(false)
-    loadLeagues()
   }
 
   const startInlineLeagueEdit = (league) => {
@@ -449,7 +567,7 @@ export default function AdminPanel() {
     fd.append('status', inlineLeagueDraft.status)
     if (inlineLeagueLogo) fd.append('logo', inlineLeagueLogo)
 
-    const res = await apiCall(`/leagues/${leagueId}`, { method: 'PUT', body: fd })
+    const res = await postFormSafe(`/leagues/${leagueId}`, fd, 'PUT')
     if (!res.ok) {
       const payload = await res.json().catch(() => ({}))
       alert(payload.error || 'Failed to update league')
@@ -476,28 +594,49 @@ export default function AdminPanel() {
     if (bowlingCount < 2) { alert('At least 2 bowlers/all-rounders are mandatory in the squad.'); return }
     if (!normalizedPlayers[bulkCaptainIndex]?.name) { alert('Captain must be selected from entered players.'); return }
 
-    const fd = new FormData()
-    const dataPayload = { league_id: selectedLeague, name: bulkTeamName.trim(), captain_index: bulkCaptainIndex, players: normalizedPlayers }
-    fd.append('data', JSON.stringify(dataPayload))
-    if (bulkTeamLogo) fd.append('logo', bulkTeamLogo)
-    bulkPhotos.forEach((photo, index) => { if (photo) fd.append(`player_photo_${index}`, photo) })
-    const res = await apiCall('/teams/bulk', { method: 'POST', body: fd })
-    if (res.ok) {
-      const created = await res.json()
-      const createdTeamId = created.id
-      setBulkTeamName(''); setBulkTeamLogo(null); setBulkCaptainIndex(0)
-      setBulkPlayers(Array(11).fill({ name: '', role: 'batsman', jersey_number: '' }))
-      setBulkPhotos(Array(11).fill(null))
-      setShowInlineTeamForm(false)
-      await loadTeams()
-      if (createdTeamId) {
-        setSelectedTeam(createdTeamId)
-        setActiveSection('players')
-        await generateSquadBannerFromSquads(createdTeamId)
+    const buildBulkFormData = (includePhotos = true) => {
+      const fd = new FormData()
+      const dataPayload = { league_id: selectedLeague, name: bulkTeamName.trim(), captain_index: bulkCaptainIndex, players: normalizedPlayers }
+      fd.append('data', JSON.stringify(dataPayload))
+      if (bulkTeamLogo) fd.append('logo', bulkTeamLogo)
+      if (includePhotos) {
+        bulkPhotos.forEach((photo, index) => { if (photo) fd.append(`player_photo_${index}`, photo) })
       }
-    } else {
-      const d = await res.json().catch(() => ({}))
-      alert(d.error || 'Failed to create team and squad. Please try again.')
+      return fd
+    }
+
+    try {
+      const hasPhotos = bulkPhotos.some((p) => !!p)
+      let res = await postFormSafe('/teams/bulk', buildBulkFormData(true), 'POST')
+
+      // Android/WebView can fail large multipart payloads; retry without player photos.
+      if (!res.ok && hasPhotos && (res.status === 413 || res.status >= 500)) {
+        const retryRes = await postFormSafe('/teams/bulk', buildBulkFormData(false), 'POST')
+        if (retryRes.ok) {
+          alert('Team created without squad photos due upload size/network limit. You can update each player photo from squad edit.')
+          res = retryRes
+        }
+      }
+
+      if (res.ok) {
+        const created = await res.json()
+        const createdTeamId = created.id
+        setBulkTeamName(''); setBulkTeamLogo(null); setBulkCaptainIndex(0)
+        setBulkPlayers(createEmptyBulkPlayers())
+        setBulkPhotos(createEmptyBulkPhotos())
+        setShowInlineTeamForm(false)
+        await loadTeams()
+        if (createdTeamId) {
+          setSelectedTeam(createdTeamId)
+          setActiveSection('players')
+          await generateSquadBannerFromSquads(createdTeamId)
+        }
+      } else {
+        const d = await res.json().catch(() => ({}))
+        alert(d.error || 'Failed to create team and squad. Please try again.')
+      }
+    } catch (err) {
+      alert(err?.message || 'Failed to create team and squad. Please check network and try again.')
     }
   }
 
@@ -533,7 +672,8 @@ export default function AdminPanel() {
     fd.append('team_id', selectedTeam); fd.append('name', playerForm.name)
     fd.append('role', playerForm.role); fd.append('jersey_number', playerForm.jersey_number)
     if (playerPhoto) fd.append('photo', playerPhoto)
-    await apiCall('/players', { method: 'POST', body: fd })
+    const res = await postFormSafe('/players', fd, 'POST')
+    if (!(await ensureOk(res, 'Failed to add player'))) return
     setPlayerForm({ name: '', role: 'batsman', jersey_number: '' }); setPlayerPhoto(null); loadPlayers()
   }
 
@@ -548,19 +688,27 @@ export default function AdminPanel() {
     const fd = new FormData()
     fd.append('name', editPlayerForm.name); fd.append('role', editPlayerForm.role); fd.append('jersey_number', editPlayerForm.jersey_number)
     if (editPlayerPhoto) fd.append('photo', editPlayerPhoto)
-    await apiCall(`/players/${editPlayerForm.id}`, { method: 'PUT', body: fd })
+    const res = await postFormSafe(`/players/${editPlayerForm.id}`, fd, 'PUT')
+    if (!(await ensureOk(res, 'Failed to update player'))) return
     setShowModal(null); setEditPlayerForm({ id: null, name: '', role: 'batsman', jersey_number: '' }); setEditPlayerPhoto(null); loadPlayers()
   }
 
   const startInlinePlayerEdit = (player) => {
     setInlineEditPlayerId(player.id)
     setInlinePlayerDraft({ name: player.name || '', role: player.role || 'batsman', jersey_number: player.jersey_number || '' })
+    setInlinePlayerPhoto(null)
   }
-  const cancelInlinePlayerEdit = () => { setInlineEditPlayerId(null); setInlinePlayerDraft({ name: '', role: 'batsman', jersey_number: '' }) }
+  const cancelInlinePlayerEdit = () => {
+    setInlineEditPlayerId(null)
+    setInlinePlayerDraft({ name: '', role: 'batsman', jersey_number: '' })
+    setInlinePlayerPhoto(null)
+  }
   const saveInlinePlayerEdit = async (playerId) => {
     const fd = new FormData()
     fd.append('name', inlinePlayerDraft.name); fd.append('role', inlinePlayerDraft.role); fd.append('jersey_number', inlinePlayerDraft.jersey_number)
-    await apiCall(`/players/${playerId}`, { method: 'PUT', body: fd })
+    if (inlinePlayerPhoto) fd.append('photo', inlinePlayerPhoto)
+    const res = await postFormSafe(`/players/${playerId}`, fd, 'PUT')
+    if (!(await ensureOk(res, 'Failed to update player'))) return
     cancelInlinePlayerEdit(); loadPlayers()
   }
   const deletePlayer = async (id) => { await apiCall(`/players/${id}`, { method: 'DELETE' }); loadPlayers() }
@@ -592,7 +740,8 @@ export default function AdminPanel() {
     fd.append('captain_name', inlineTeamDraft.captain_name)
     if (inlineTeamLogo) fd.append('logo', inlineTeamLogo)
     if (inlineCaptainPhoto) fd.append('captain_photo', inlineCaptainPhoto)
-    await apiCall(`/teams/${teamId}`, { method: 'PUT', body: fd })
+    const res = await postFormSafe(`/teams/${teamId}`, fd, 'PUT')
+    if (!(await ensureOk(res, 'Failed to update team'))) return
     await loadTeams()
     if (selectedTeam === teamId) loadPlayers()
     cancelInlineTeamEdit()
@@ -697,8 +846,33 @@ export default function AdminPanel() {
   }
 
   const updateMatch = async (matchId, updates) => {
-    await apiCall(`/matches/${matchId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) })
+    const res = await apiCall(`/matches/${matchId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) })
+    if (!(await ensureOk(res, 'Failed to update fixture'))) return
     loadMatches(); setEditMatch(null)
+  }
+
+  const openEditMatch = (match) => {
+    setEditMatch(match)
+    setEditMatchDraft({
+      date: match?.date || '',
+      time: match?.time || '',
+      venue: match?.venue || '',
+      overs_per_innings: parseInt(match?.overs_per_innings, 10) || 20,
+      status: match?.status || 'upcoming',
+    })
+  }
+
+  const saveEditedMatch = async (e) => {
+    e.preventDefault()
+    if (!editMatch?.id) return
+
+    await updateMatch(editMatch.id, {
+      date: editMatchDraft.date,
+      time: editMatchDraft.time,
+      venue: editMatchDraft.venue,
+      overs_per_innings: parseInt(editMatchDraft.overs_per_innings, 10) || 20,
+      status: editMatchDraft.status,
+    })
   }
 
   const canStartScheduledMatch = (match) => {
@@ -969,7 +1143,7 @@ export default function AdminPanel() {
                         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
                           <div className="form-group" style={{ marginBottom:0 }}>
                             <label className="form-label">Team Name *</label>
-                            <input className="form-input" value={bulkTeamName} onChange={e => setBulkTeamName(e.target.value)} required />
+                            <input className="form-input" value={bulkTeamName} onChange={e => setBulkTeamName(e.target.value)} />
                           </div>
                           <div className="form-group" style={{ marginBottom:0 }}>
                             <label className="form-label">Team Logo</label>
@@ -996,7 +1170,7 @@ export default function AdminPanel() {
                                 </label>
                               </div>
                               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6, marginBottom:6 }}>
-                                <input className="form-input" style={{ fontSize:'0.8rem' }} value={player.name} onChange={e => handleBulkPlayerChange(index,'name',e.target.value)} placeholder="Player Name *" required />
+                                <input className="form-input" style={{ fontSize:'0.8rem' }} value={player.name} onChange={e => handleBulkPlayerChange(index,'name',e.target.value)} placeholder="Player Name *" />
                                 <select className="form-select" style={{ fontSize:'0.8rem' }} value={player.role} onChange={e => handleBulkPlayerChange(index,'role',e.target.value)}>
                                   <option value="batsman">Batsman</option>
                                   <option value="bowler">Bowler</option>
@@ -1014,7 +1188,7 @@ export default function AdminPanel() {
 
                         <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:10 }}>
                           <button type="button" className="btn btn-secondary" onClick={() => setShowInlineTeamForm(false)}>Cancel</button>
-                          <button type="submit" className="btn btn-primary" disabled={!canSubmitBulkTeam}>Save Team & Squad</button>
+                          <button type="submit" className="btn btn-primary">Save Team & Squad</button>
                         </div>
                       </form>
                     </div>
@@ -1130,9 +1304,16 @@ export default function AdminPanel() {
                               </select>
                               <input className="form-input" type="number" value={inlinePlayerDraft.jersey_number} onChange={e => setInlinePlayerDraft(p=>({...p,jersey_number:e.target.value}))} placeholder="Jersey #" style={{ fontSize:'0.82rem' }} />
                             </div>
+                            <input
+                              className="form-input"
+                              type="file"
+                              accept="image/*"
+                              onChange={e => setInlinePlayerPhoto(e.target.files?.[0] || null)}
+                              style={{ fontSize:'0.76rem', padding:'6px' }}
+                            />
                             <div style={{ display:'flex', gap:6 }}>
-                              <button className="btn btn-sm btn-primary" style={{ flex:1, padding:'5px' }} onClick={() => saveInlinePlayerEdit(player.id)}>Save</button>
-                              <button className="btn btn-sm btn-secondary" style={{ flex:1, padding:'5px' }} onClick={cancelInlinePlayerEdit}>Cancel</button>
+                              <button type="button" className="btn btn-sm btn-primary" style={{ flex:1, padding:'5px' }} onClick={() => saveInlinePlayerEdit(player.id)}>Save</button>
+                              <button type="button" className="btn btn-sm btn-secondary" style={{ flex:1, padding:'5px' }} onClick={cancelInlinePlayerEdit}>Cancel</button>
                             </div>
                           </div>
                         ) : (
@@ -1148,8 +1329,8 @@ export default function AdminPanel() {
                               <div style={{ width:22, height:22, borderRadius:'50%', background:'var(--accent-dim)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.6rem', fontFamily:'var(--font-mono)', fontWeight:700, color:'var(--accent)', flexShrink:0 }}>{player.jersey_number}</div>
                             )}
                             <div style={{ display:'flex', gap:4, flexShrink:0 }}>
-                              <button className="btn btn-sm btn-secondary" style={{ padding:'2px 8px', fontSize:'0.64rem' }} onClick={() => startInlinePlayerEdit(player)}>Edit</button>
-                              <button className="btn btn-sm btn-danger" style={{ padding:'2px 8px', fontSize:'0.64rem' }} onClick={() => deletePlayer(player.id)}>✕</button>
+                              <button type="button" className="btn btn-sm btn-secondary" style={{ padding:'2px 8px', fontSize:'0.64rem' }} onClick={() => startInlinePlayerEdit(player)}>Edit</button>
+                              <button type="button" className="btn btn-sm btn-danger" style={{ padding:'2px 8px', fontSize:'0.64rem' }} onClick={() => deletePlayer(player.id)}>✕</button>
                             </div>
                           </div>
                         )}
@@ -1194,6 +1375,13 @@ export default function AdminPanel() {
                         </div>
                         {/* Actions */}
                         <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            style={{ padding:'4px 10px', fontSize:'0.72rem' }}
+                            onClick={() => openEditMatch(m)}
+                          >
+                            Edit
+                          </button>
                           {m.status==='upcoming' && (
                             <button
                               className="btn btn-sm btn-primary"
@@ -1316,45 +1504,6 @@ export default function AdminPanel() {
                 </div>
               </div>
               <div className="modal-footer"><button type="submit" className="btn btn-primary">Create League</button></div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {showModal === 'editLeague' && (
-        <div className="modal-overlay" onClick={() => setShowModal(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header"><h3>Edit League</h3><button className="modal-close" onClick={() => setShowModal(null)}>×</button></div>
-            <form onSubmit={updateLeague}>
-              <div className="modal-body">
-                <div className="form-group"><label className="form-label">League Name *</label><input className="form-input" value={editLeagueForm.name} onChange={e => setEditLeagueForm({...editLeagueForm,name:e.target.value})} required /></div>
-                <div className="form-grid">
-                  <div className="form-group"><label className="form-label">City</label><input className="form-input" value={editLeagueForm.city} onChange={e => setEditLeagueForm({...editLeagueForm,city:e.target.value})} /></div>
-                  <div className="form-group"><label className="form-label">Venue</label><input className="form-input" value={editLeagueForm.venue} onChange={e => setEditLeagueForm({...editLeagueForm,venue:e.target.value})} /></div>
-                </div>
-                <div className="form-grid">
-                  <div className="form-group"><label className="form-label">Owner / Organizer</label><input className="form-input" value={editLeagueForm.organizer} onChange={e => setEditLeagueForm({...editLeagueForm,organizer:e.target.value})} /></div>
-                  <div className="form-group"><label className="form-label">Season</label><input className="form-input" value={editLeagueForm.season} onChange={e => setEditLeagueForm({...editLeagueForm,season:e.target.value})} /></div>
-                </div>
-                <div className="form-grid">
-                  <div className="form-group"><label className="form-label">Format</label>
-                    <select className="form-select" value={editLeagueForm.format} onChange={e => setEditLeagueForm({...editLeagueForm,format:e.target.value})}>
-                      <option value="round-robin">Round Robin</option>
-                      <option value="knockout">Knockout</option>
-                    </select>
-                  </div>
-                  <div className="form-group"><label className="form-label">Overs / Innings</label><input className="form-input" type="number" min="1" value={editLeagueForm.overs_per_innings} onChange={e => setEditLeagueForm({...editLeagueForm,overs_per_innings:e.target.value})} /></div>
-                </div>
-                <div className="form-group"><label className="form-label">Status</label>
-                  <select className="form-select" value={editLeagueForm.status} onChange={e => setEditLeagueForm({...editLeagueForm,status:e.target.value})}>
-                    <option value="upcoming">Upcoming</option>
-                    <option value="active">Active</option>
-                    <option value="completed">Completed</option>
-                  </select>
-                </div>
-                <div className="form-group"><label className="form-label">Replace League Logo</label><input className="form-input" type="file" accept="image/*" onChange={e => setEditLeagueLogo(e.target.files[0])} /></div>
-              </div>
-              <div className="modal-footer"><button type="submit" className="btn btn-primary">Save League</button></div>
             </form>
           </div>
         </div>
@@ -1497,6 +1646,75 @@ export default function AdminPanel() {
                 <div className="form-group"><label className="form-label">Replace Photo</label><input className="form-input" type="file" accept="image/*" onChange={e => setEditPlayerPhoto(e.target.files[0])} /></div>
               </div>
               <div className="modal-footer"><button type="submit" className="btn btn-primary">Save Changes</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editMatch && (
+        <div className="modal-overlay" onClick={() => setEditMatch(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header"><h3>Edit Fixture</h3><button className="modal-close" onClick={() => setEditMatch(null)}>×</button></div>
+            <form onSubmit={saveEditedMatch}>
+              <div className="modal-body">
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label className="form-label">Date</label>
+                    <input
+                      className="form-input"
+                      type="date"
+                      value={editMatchDraft.date}
+                      onChange={e => setEditMatchDraft(prev => ({ ...prev, date: e.target.value }))}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Time</label>
+                    <input
+                      className="form-input"
+                      type="time"
+                      value={editMatchDraft.time}
+                      onChange={e => setEditMatchDraft(prev => ({ ...prev, time: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label className="form-label">Venue</label>
+                    <input
+                      className="form-input"
+                      value={editMatchDraft.venue}
+                      onChange={e => setEditMatchDraft(prev => ({ ...prev, venue: e.target.value }))}
+                      placeholder="Enter venue"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Overs</label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      min="1"
+                      value={editMatchDraft.overs_per_innings}
+                      onChange={e => setEditMatchDraft(prev => ({ ...prev, overs_per_innings: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Status</label>
+                  <select
+                    className="form-select"
+                    value={editMatchDraft.status}
+                    onChange={e => setEditMatchDraft(prev => ({ ...prev, status: e.target.value }))}
+                  >
+                    <option value="upcoming">Upcoming</option>
+                    <option value="live">Live</option>
+                    <option value="completed">Completed</option>
+                  </select>
+                </div>
+              </div>
+              <div className="modal-footer" style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setEditMatch(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Fixture</button>
+              </div>
             </form>
           </div>
         </div>
