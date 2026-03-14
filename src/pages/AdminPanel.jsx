@@ -1061,8 +1061,8 @@ export default function AdminPanel() {
                             {player.jersey_number && (
                               <div style={{ width:22, height:22, borderRadius:'50%', background:'var(--accent-dim)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'0.6rem', fontFamily:'var(--font-mono)', fontWeight:700, color:'var(--accent)', flexShrink:0 }}>{player.jersey_number}</div>
                             )}
-                            <div style={{ display:'flex', gap:4, flexShrink:0 }}>
-                              <button className="btn btn-sm btn-secondary" style={{ padding:'2px 8px', fontSize:'0.64rem' }} onClick={() => startInlinePlayerEdit(player)}>Edit</button>
+                            <div style={{ display:'flex', gap:4, flexShrink:0, flexWrap:'wrap', justifyContent:'flex-end' }}>
+                              <button className="btn btn-sm btn-secondary" style={{ padding:'3px 8px', fontSize:'0.64rem', minWidth:'72px' }} onClick={() => startInlinePlayerEdit(player)}>Edit Player</button>
                               <button className="btn btn-sm btn-danger" style={{ padding:'2px 8px', fontSize:'0.64rem' }} onClick={() => deletePlayer(player.id)}>✕</button>
                             </div>
                           </div>
