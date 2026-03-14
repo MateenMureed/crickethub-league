@@ -200,6 +200,7 @@ export default function AdminPanel() {
   const [editPlayerPhoto, setEditPlayerPhoto] = useState(null)
   const [inlineEditPlayerId, setInlineEditPlayerId] = useState(null)
   const [inlinePlayerDraft, setInlinePlayerDraft] = useState({ name: '', role: 'batsman', jersey_number: '' })
+  const [inlinePlayerPhoto, setInlinePlayerPhoto] = useState(null)
   const [inlineEditTeamId, setInlineEditTeamId] = useState(null)
   const [inlineTeamDraft, setInlineTeamDraft] = useState({ name: '', captain_name: '' })
   const [inlineTeamLogo, setInlineTeamLogo] = useState(null)
@@ -540,11 +541,17 @@ export default function AdminPanel() {
   const startInlinePlayerEdit = (player) => {
     setInlineEditPlayerId(player.id)
     setInlinePlayerDraft({ name: player.name || '', role: player.role || 'batsman', jersey_number: player.jersey_number || '' })
+    setInlinePlayerPhoto(null)
   }
-  const cancelInlinePlayerEdit = () => { setInlineEditPlayerId(null); setInlinePlayerDraft({ name: '', role: 'batsman', jersey_number: '' }) }
+  const cancelInlinePlayerEdit = () => {
+    setInlineEditPlayerId(null)
+    setInlinePlayerDraft({ name: '', role: 'batsman', jersey_number: '' })
+    setInlinePlayerPhoto(null)
+  }
   const saveInlinePlayerEdit = async (playerId) => {
     const fd = new FormData()
     fd.append('name', inlinePlayerDraft.name); fd.append('role', inlinePlayerDraft.role); fd.append('jersey_number', inlinePlayerDraft.jersey_number)
+    if (inlinePlayerPhoto) fd.append('photo', inlinePlayerPhoto)
     await apiCall(`/players/${playerId}`, { method: 'PUT', body: fd })
     cancelInlinePlayerEdit(); loadPlayers()
   }
@@ -1030,6 +1037,13 @@ export default function AdminPanel() {
                               </select>
                               <input className="form-input" type="number" value={inlinePlayerDraft.jersey_number} onChange={e => setInlinePlayerDraft(p=>({...p,jersey_number:e.target.value}))} placeholder="Jersey #" style={{ fontSize:'0.82rem' }} />
                             </div>
+                            <input
+                              className="form-input"
+                              type="file"
+                              accept="image/*"
+                              onChange={e => setInlinePlayerPhoto(e.target.files?.[0] || null)}
+                              style={{ fontSize:'0.76rem', padding:'6px' }}
+                            />
                             <div style={{ display:'flex', gap:6 }}>
                               <button className="btn btn-sm btn-primary" style={{ flex:1, padding:'5px' }} onClick={() => saveInlinePlayerEdit(player.id)}>Save</button>
                               <button className="btn btn-sm btn-secondary" style={{ flex:1, padding:'5px' }} onClick={cancelInlinePlayerEdit}>Cancel</button>
